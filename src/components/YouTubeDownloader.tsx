@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Download, Play, ChevronDown } from "lucide-react";
+import { Download, Play, ChevronDown, AlertCircle } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 
 const QUALITY_OPTIONS = [
   { label: "4K (2160p)", value: "2160" },
@@ -14,28 +15,39 @@ const YouTubeDownloader = () => {
   const [url, setUrl] = useState("");
   const [quality, setQuality] = useState("1080");
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ title: string; thumbnail: string } | null>(null);
+  const [error, setError] = useState("");
+  const [result, setResult] = useState<{
+    title: string;
+    author: string;
+    thumbnail: string;
+    message: string;
+  } | null>(null);
 
   const handleFetch = async () => {
     if (!url.trim()) return;
     setLoading(true);
-    // Simulate API call
-    await new Promise((r) => setTimeout(r, 1200));
-    setResult({
-      title: "Sample Video — Great Content Here",
-      thumbnail: `https://img.youtube.com/vi/${extractVideoId(url) || "dQw4w9WgXcQ"}/hqdefault.jpg`,
-    });
-    setLoading(false);
-  };
+    setError("");
+    setResult(null);
 
-  const extractVideoId = (u: string) => {
-    const match = u.match(/(?:v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
-    return match?.[1];
-  };
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke("youtube-info", {
+        body: { url, quality },
+      });
 
-  const handleDownload = () => {
-    // In production, this would call your backend API
-    alert(`Download would start for quality: ${quality}p\nEndpoint: POST /api/youtube/download\nBody: { url: "${url}", quality: "${quality}" }`);
+      if (fnError) throw fnError;
+      if (data.error) throw new Error(data.error);
+
+      setResult({
+        title: data.title,
+        author: data.author,
+        thumbnail: data.thumbnail,
+        message: data.message,
+      });
+    } catch (e: any) {
+      setError(e.message || "Failed to fetch video info");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -70,6 +82,13 @@ const YouTubeDownloader = () => {
           <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
         </div>
 
+        {error && (
+          <div className="flex items-center gap-2 text-destructive text-xs">
+            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
         <button
           onClick={handleFetch}
           disabled={loading || !url.trim()}
@@ -97,16 +116,13 @@ const YouTubeDownloader = () => {
             <div className="absolute inset-0 bg-foreground/10" />
           </div>
           <p className="font-medium text-sm leading-snug">{result.title}</p>
+          <p className="text-xs text-muted-foreground">by {result.author}</p>
           <p className="text-xs text-muted-foreground">
             Selected quality: {QUALITY_OPTIONS.find((q) => q.value === quality)?.label}
           </p>
-          <button
-            onClick={handleDownload}
-            className="w-full bg-primary text-primary-foreground font-semibold rounded-xl px-6 py-3 transition-all duration-200 ease-out hover:shadow-[0_4px_20px_0_hsl(349_72%_52%/0.35)] active:scale-[0.97] flex items-center justify-center gap-2"
-          >
-            <Download className="w-4 h-4" />
-            Download
-          </button>
+          <div className="bg-accent/50 rounded-xl p-3">
+            <p className="text-xs text-muted-foreground leading-relaxed">{result.message}</p>
+          </div>
         </div>
       )}
     </div>

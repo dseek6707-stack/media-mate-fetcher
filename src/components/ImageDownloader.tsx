@@ -1,9 +1,11 @@
 import { useState } from "react";
-import { Download, ImageIcon, ExternalLink } from "lucide-react";
+import { Download, ImageIcon, ExternalLink, AlertCircle } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 
 const ImageDownloader = () => {
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
   const [error, setError] = useState("");
 
@@ -13,10 +15,8 @@ const ImageDownloader = () => {
     setError("");
     setPreview(null);
 
-    // Validate it looks like an image URL
     try {
       new URL(url);
-      await new Promise((r) => setTimeout(r, 600));
       setPreview(url);
     } catch {
       setError("Please enter a valid URL");
@@ -24,14 +24,37 @@ const ImageDownloader = () => {
     setLoading(false);
   };
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (!preview) return;
-    // In production this would proxy through your backend
-    const link = document.createElement("a");
-    link.href = preview;
-    link.target = "_blank";
-    link.download = "downloaded-image";
-    link.click();
+    setDownloading(true);
+    setError("");
+
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke("download-image", {
+        body: { url: preview },
+      });
+
+      if (fnError) throw fnError;
+
+      // data is a Blob when the function returns binary
+      if (data instanceof Blob) {
+        const blobUrl = URL.createObjectURL(data);
+        const link = document.createElement("a");
+        link.href = blobUrl;
+        link.download = url.split("/").pop() || "download.jpg";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(blobUrl);
+      } else {
+        // If data has an error message
+        throw new Error(data?.error || "Download failed");
+      }
+    } catch (e: any) {
+      setError(e.message || "Download failed");
+    } finally {
+      setDownloading(false);
+    }
   };
 
   return (
@@ -53,7 +76,12 @@ const ImageDownloader = () => {
           className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/30 transition-shadow duration-150"
         />
 
-        {error && <p className="text-destructive text-xs">{error}</p>}
+        {error && (
+          <div className="flex items-center gap-2 text-destructive text-xs">
+            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
 
         <button
           onClick={handlePreview}
@@ -90,10 +118,20 @@ const ImageDownloader = () => {
           </div>
           <button
             onClick={handleDownload}
-            className="w-full bg-primary text-primary-foreground font-semibold rounded-xl px-6 py-3 transition-all duration-200 ease-out hover:shadow-[0_4px_20px_0_hsl(349_72%_52%/0.35)] active:scale-[0.97] flex items-center justify-center gap-2"
+            disabled={downloading}
+            className="w-full bg-primary text-primary-foreground font-semibold rounded-xl px-6 py-3 transition-all duration-200 ease-out hover:shadow-[0_4px_20px_0_hsl(349_72%_52%/0.35)] active:scale-[0.97] flex items-center justify-center gap-2 disabled:opacity-50"
           >
-            <Download className="w-4 h-4" />
-            Save Image
+            {downloading ? (
+              <span className="flex items-center gap-2">
+                <span className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                Downloading…
+              </span>
+            ) : (
+              <>
+                <Download className="w-4 h-4" />
+                Save Image
+              </>
+            )}
           </button>
         </div>
       )}
