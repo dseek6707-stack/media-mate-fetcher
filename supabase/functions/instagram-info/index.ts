@@ -74,20 +74,26 @@ Deno.serve(async (req) => {
 
     // For videos, reels, and photos - try oEmbed
     const oembedUrl = `https://api.instagram.com/oembed/?url=${encodeURIComponent(url)}`;
-    const oembedRes = await fetch(oembedUrl);
-
-    if (oembedRes.ok) {
-      const data = await oembedRes.json();
-      return new Response(
-        JSON.stringify({
-          title: data.title || label,
-          author: data.author_name || "Unknown",
-          thumbnail: data.thumbnail_url,
-          downloadAvailable: false,
-          message: `${label} info fetched successfully. Direct download requires a dedicated media processing service.`,
-        }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    
+    try {
+      const oembedRes = await fetch(oembedUrl);
+      const text = await oembedRes.text();
+      
+      if (oembedRes.ok && text.startsWith("{")) {
+        const data = JSON.parse(text);
+        return new Response(
+          JSON.stringify({
+            title: data.title || label,
+            author: data.author_name || "Unknown",
+            thumbnail: data.thumbnail_url,
+            downloadAvailable: false,
+            message: `${label} info fetched successfully. Direct download requires a dedicated media processing service.`,
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    } catch {
+      // oEmbed failed, fall through to fallback
     }
 
     return new Response(
