@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { Download, AlertCircle, Link2, X, Search, Play, Film, Camera, User, BookOpen, Clock, Video, ImageIcon, ExternalLink } from "lucide-react";
+import { Download, AlertCircle, Link2, X, Search, Play, Film, Camera, User, BookOpen, Clock, Video, ImageIcon, ExternalLink, CheckCircle2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import type { FeatureTab } from "./FeatureTabs";
 
@@ -101,7 +101,9 @@ interface Result {
   title: string;
   author?: string;
   thumbnail: string | null;
+  mediaUrl?: string | null;
   message?: string;
+  downloadAvailable?: boolean;
   type: string;
 }
 
@@ -115,6 +117,7 @@ const UniversalDownloader = ({ activeTab }: UniversalDownloaderProps) => {
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [result, setResult] = useState<Result | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
 
@@ -138,12 +141,14 @@ const UniversalDownloader = ({ activeTab }: UniversalDownloaderProps) => {
     setResult(null);
     setPreview(null);
     setError("");
+    setSuccess("");
   }, []);
 
   const handleSearch = async () => {
     if (!url.trim()) return;
     setLoading(true);
     setError("");
+    setSuccess("");
     setResult(null);
     setPreview(null);
 
@@ -160,60 +165,75 @@ const UniversalDownloader = ({ activeTab }: UniversalDownloaderProps) => {
           body: { url, quality },
         });
         if (fnError) throw fnError;
-        if (data.error) throw new Error(data.error);
+        if (data?.error) {
+          setError(data.error);
+          return;
+        }
         setResult({
           title: data.title,
           author: data.author,
           thumbnail: data.thumbnail,
           message: data.message,
+          downloadAvailable: data.downloadAvailable,
           type: "youtube",
         });
       } else {
-        // Instagram - all types
         const contentType = activeTab.replace("ig-", "");
         const { data, error: fnError } = await supabase.functions.invoke("instagram-info", {
           body: { url, type: contentType },
         });
         if (fnError) throw fnError;
-        if (data.error) throw new Error(data.error);
+        if (data?.error) {
+          setError(data.error);
+          return;
+        }
         setResult({
           title: data.title,
           author: data.author,
           thumbnail: data.thumbnail,
+          mediaUrl: data.mediaUrl,
           message: data.message,
+          downloadAvailable: data.downloadAvailable,
           type: contentType,
         });
       }
     } catch (e: any) {
-      setError(e.message || "Failed to fetch media info");
+      setError(e.message || "Failed to fetch media info. Please check the link and try again.");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleImageDownload = async () => {
-    if (!preview) return;
+  const handleDownload = async (downloadUrl: string, filename?: string) => {
     setDownloading(true);
     setError("");
+    setSuccess("");
     try {
       const { data, error: fnError } = await supabase.functions.invoke("download-image", {
-        body: { url: preview },
+        body: { url: downloadUrl },
       });
       if (fnError) throw fnError;
       if (data instanceof Blob) {
         const blobUrl = URL.createObjectURL(data);
         const link = document.createElement("a");
         link.href = blobUrl;
-        link.download = url.split("/").pop() || "download.jpg";
+        link.download = filename || downloadUrl.split("/").pop()?.split("?")[0] || "download";
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
         URL.revokeObjectURL(blobUrl);
+        setSuccess("Download started! Check your downloads folder.");
       } else {
-        throw new Error(data?.error || "Download failed");
+        const text = await new Response(data).text();
+        try {
+          const json = JSON.parse(text);
+          throw new Error(json.error || "Download failed");
+        } catch {
+          throw new Error("Download failed. Please try again.");
+        }
       }
     } catch (e: any) {
-      setError(e.message || "Download failed");
+      setError(e.message || "Download failed. Please try again.");
     } finally {
       setDownloading(false);
     }
@@ -225,11 +245,7 @@ const UniversalDownloader = ({ activeTab }: UniversalDownloaderProps) => {
       <div className="text-center space-y-2 mb-8">
         <div
           className={`inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-3 ${
-            isInstagram
-              ? "bg-instagram/10"
-              : isYoutube
-              ? "bg-youtube/10"
-              : "bg-image-blue/10"
+            isInstagram ? "bg-instagram/10" : isYoutube ? "bg-youtube/10" : "bg-image-blue/10"
           }`}
         >
           <Icon className={`w-8 h-8 ${config.color}`} />
@@ -249,7 +265,7 @@ const UniversalDownloader = ({ activeTab }: UniversalDownloaderProps) => {
               type="url"
               placeholder={config.placeholder}
               value={url}
-              onChange={(e) => setUrl(e.target.value)}
+              onChange={(e) => { setUrl(e.target.value); setError(""); setSuccess(""); }}
               onKeyDown={(e) => e.key === "Enter" && handleSearch()}
               className="w-full rounded-xl border border-border bg-background pl-10 pr-20 py-3 md:py-3.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/40 transition-all duration-200"
             />
@@ -282,18 +298,10 @@ const UniversalDownloader = ({ activeTab }: UniversalDownloaderProps) => {
               className="w-full appearance-none rounded-xl border border-border bg-background px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all duration-200 pr-10"
             >
               {QUALITY_OPTIONS.map((q) => (
-                <option key={q.value} value={q.value}>
-                  {q.label}
-                </option>
+                <option key={q.value} value={q.value}>{q.label}</option>
               ))}
             </select>
-            <svg
-              className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
+            <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
             </svg>
           </div>
@@ -303,6 +311,13 @@ const UniversalDownloader = ({ activeTab }: UniversalDownloaderProps) => {
           <div className="flex items-center gap-2 text-destructive text-xs animate-slide-down">
             <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
             <span>{error}</span>
+          </div>
+        )}
+
+        {success && (
+          <div className="flex items-center gap-2 text-[hsl(var(--success))] text-xs animate-slide-down">
+            <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
+            <span>{success}</span>
           </div>
         )}
 
@@ -344,7 +359,7 @@ const UniversalDownloader = ({ activeTab }: UniversalDownloaderProps) => {
             <span className="truncate">{url}</span>
           </div>
           <button
-            onClick={handleImageDownload}
+            onClick={() => handleDownload(preview)}
             disabled={downloading}
             className="w-full bg-primary text-primary-foreground font-semibold rounded-xl px-6 py-3 transition-all duration-200 ease-out hover:shadow-[0_4px_20px_0_hsl(220_90%_56%/0.35)] active:scale-[0.97] flex items-center justify-center gap-2 disabled:opacity-50"
           >
@@ -375,17 +390,19 @@ const UniversalDownloader = ({ activeTab }: UniversalDownloaderProps) => {
                   result.type === "youtube" ? "aspect-video" : "aspect-square max-h-80"
                 }`}
               />
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-14 h-14 rounded-full bg-foreground/20 backdrop-blur-sm flex items-center justify-center transition-transform hover:scale-110">
-                  <Play className="w-6 h-6 text-primary-foreground ml-0.5" />
+              {(result.type === "youtube" || result.type === "reels" || result.type === "video") && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="w-14 h-14 rounded-full bg-foreground/20 backdrop-blur-sm flex items-center justify-center">
+                    <Play className="w-6 h-6 text-primary-foreground ml-0.5" />
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
 
           <div className="space-y-1">
             <p className="font-semibold text-sm md:text-base leading-snug">{result.title}</p>
-            {result.author && (
+            {result.author && result.author !== "Unknown" && (
               <p className="text-xs text-muted-foreground">by @{result.author}</p>
             )}
           </div>
@@ -398,46 +415,61 @@ const UniversalDownloader = ({ activeTab }: UniversalDownloaderProps) => {
 
           {result.message && (
             <div className="bg-accent rounded-xl p-3">
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                {result.message}
-              </p>
+              <p className="text-xs text-muted-foreground leading-relaxed">{result.message}</p>
             </div>
           )}
 
-          <button
-            className={`w-full ${config.buttonColor} text-primary-foreground font-semibold rounded-xl px-6 py-3 transition-all duration-200 ease-out ${config.shadowColor} active:scale-[0.97] flex items-center justify-center gap-2`}
-          >
-            <Download className="w-4 h-4" />
-            Download
-          </button>
+          {/* Download Button */}
+          {result.downloadAvailable && result.mediaUrl ? (
+            <button
+              onClick={() => handleDownload(result.mediaUrl!, `${result.title || "download"}`)}
+              disabled={downloading}
+              className={`w-full ${config.buttonColor} text-primary-foreground font-semibold rounded-xl px-6 py-3 transition-all duration-200 ease-out ${config.shadowColor} active:scale-[0.97] flex items-center justify-center gap-2 disabled:opacity-50`}
+            >
+              {downloading ? (
+                <span className="flex items-center gap-2">
+                  <span className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                  Downloading…
+                </span>
+              ) : (
+                <>
+                  <Download className="w-4 h-4" />
+                  Download Now
+                </>
+              )}
+            </button>
+          ) : result.thumbnail ? (
+            <button
+              onClick={() => handleDownload(result.thumbnail!, `${result.title || "download"}`)}
+              disabled={downloading}
+              className={`w-full ${config.buttonColor} text-primary-foreground font-semibold rounded-xl px-6 py-3 transition-all duration-200 ease-out ${config.shadowColor} active:scale-[0.97] flex items-center justify-center gap-2 disabled:opacity-50`}
+            >
+              {downloading ? (
+                <span className="flex items-center gap-2">
+                  <span className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                  Downloading…
+                </span>
+              ) : (
+                <>
+                  <Download className="w-4 h-4" />
+                  Download Thumbnail
+                </>
+              )}
+            </button>
+          ) : null}
         </div>
       )}
 
-      {/* How it works section */}
+      {/* How it works */}
       <div className="mt-10 space-y-4 animate-fade-up" style={{ animationDelay: "200ms" }}>
         <h2 className="text-lg font-bold text-center">How to Download?</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {[
-            {
-              step: "1",
-              title: "Copy Link",
-              desc: "Copy the link of the media you want to download from Instagram or YouTube",
-            },
-            {
-              step: "2",
-              title: "Paste & Search",
-              desc: "Paste the link in the input box above and click Search",
-            },
-            {
-              step: "3",
-              title: "Download",
-              desc: "Click the Download button to save the media to your device",
-            },
+            { step: "1", title: "Copy Link", desc: "Copy the link of the media you want to download from Instagram or YouTube" },
+            { step: "2", title: "Paste & Search", desc: "Paste the link in the input box above and click Search" },
+            { step: "3", title: "Download", desc: "Click the Download button to save the media to your device" },
           ].map((item) => (
-            <div
-              key={item.step}
-              className="bg-card rounded-xl p-4 space-y-2 shadow-[0_1px_8px_0_hsl(220_25%_10%/0.04)]"
-            >
+            <div key={item.step} className="bg-card rounded-xl p-4 space-y-2 shadow-[0_1px_8px_0_hsl(220_25%_10%/0.04)]">
               <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
                 <span className="text-sm font-bold text-primary">{item.step}</span>
               </div>
@@ -448,7 +480,7 @@ const UniversalDownloader = ({ activeTab }: UniversalDownloaderProps) => {
         </div>
       </div>
 
-      {/* Features grid */}
+      {/* Features */}
       <div className="mt-8 mb-8 space-y-4 animate-fade-up" style={{ animationDelay: "300ms" }}>
         <h2 className="text-lg font-bold text-center">Supported Features</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
@@ -464,10 +496,7 @@ const UniversalDownloader = ({ activeTab }: UniversalDownloaderProps) => {
           ].map((f) => {
             const FIcon = f.icon;
             return (
-              <div
-                key={f.label}
-                className="bg-card rounded-xl p-3 flex items-center gap-2.5 shadow-[0_1px_6px_0_hsl(220_25%_10%/0.03)]"
-              >
+              <div key={f.label} className="bg-card rounded-xl p-3 flex items-center gap-2.5 shadow-[0_1px_6px_0_hsl(220_25%_10%/0.03)]">
                 <FIcon className={`w-4 h-4 ${f.color} shrink-0`} />
                 <span className="text-xs font-medium">{f.label}</span>
               </div>
