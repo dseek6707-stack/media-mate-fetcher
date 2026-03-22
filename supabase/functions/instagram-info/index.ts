@@ -6,13 +6,22 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
+const CONTENT_LABELS: Record<string, string> = {
+  video: "Instagram Video",
+  reels: "Instagram Reel",
+  photo: "Instagram Photo",
+  dp: "Profile Picture",
+  stories: "Instagram Story",
+  highlights: "Story Highlight",
+};
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { url } = await req.json();
+    const { url, type = "video" } = await req.json();
 
     if (!url || typeof url !== "string") {
       return new Response(
@@ -21,16 +30,49 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Validate it looks like an Instagram URL
-    const isInstagram = /instagram\.com\/(reel|p|reels)\//i.test(url);
+    const isInstagram = /instagram\.com/i.test(url);
     if (!isInstagram) {
       return new Response(
-        JSON.stringify({ error: "Not a valid Instagram reel URL" }),
+        JSON.stringify({ error: "Not a valid Instagram URL" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Try to get oEmbed data from Instagram (works for public posts)
+    const label = CONTENT_LABELS[type] || "Instagram Content";
+
+    // For DP downloads, try to extract username
+    if (type === "dp") {
+      const usernameMatch = url.match(/instagram\.com\/([^/?#]+)/);
+      const username = usernameMatch?.[1] || "unknown";
+      return new Response(
+        JSON.stringify({
+          title: `${username}'s Profile Picture`,
+          author: username,
+          thumbnail: null,
+          downloadAvailable: false,
+          message: `Profile picture download for @${username}. Full HD DP download requires Instagram API access with proper authentication.`,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // For stories and highlights
+    if (type === "stories" || type === "highlights") {
+      const usernameMatch = url.match(/instagram\.com\/stories\/([^/?#]+)/);
+      const username = usernameMatch?.[1] || "unknown";
+      return new Response(
+        JSON.stringify({
+          title: `${label} from @${username}`,
+          author: username,
+          thumbnail: null,
+          downloadAvailable: false,
+          message: `${label} download requires Instagram API access. Stories are only available for 24 hours and require authentication to access.`,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // For videos, reels, and photos - try oEmbed
     const oembedUrl = `https://api.instagram.com/oembed/?url=${encodeURIComponent(url)}`;
     const oembedRes = await fetch(oembedUrl);
 
@@ -38,24 +80,23 @@ Deno.serve(async (req) => {
       const data = await oembedRes.json();
       return new Response(
         JSON.stringify({
-          title: data.title || "Instagram Reel",
+          title: data.title || label,
           author: data.author_name || "Unknown",
           thumbnail: data.thumbnail_url,
           downloadAvailable: false,
-          message: "Reel info fetched. Actual downloading requires Instagram API access or a dedicated scraping service.",
+          message: `${label} info fetched successfully. Direct download requires a dedicated media processing service.`,
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Fallback if oEmbed fails
     return new Response(
       JSON.stringify({
-        title: "Instagram Reel",
+        title: label,
         author: "Unknown",
         thumbnail: null,
         downloadAvailable: false,
-        message: "Could not fetch reel metadata. The post may be private. Downloading requires a dedicated media service.",
+        message: `Could not fetch ${label.toLowerCase()} metadata. The content may be private or require authentication.`,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

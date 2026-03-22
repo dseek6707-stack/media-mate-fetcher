@@ -6,29 +6,35 @@
 
 @layer base {
   :root {
-    --background: 220 20% 97%;
+    --background: 220 16% 96%;
     --foreground: 220 25% 10%;
     --card: 0 0% 100%;
     --card-foreground: 220 25% 10%;
     --popover: 0 0% 100%;
     --popover-foreground: 220 25% 10%;
-    --primary: 349 72% 52%;
+    --primary: 220 90% 56%;
     --primary-foreground: 0 0% 100%;
     --secondary: 220 14% 92%;
     --secondary-foreground: 220 25% 10%;
     --muted: 220 14% 94%;
     --muted-foreground: 220 10% 46%;
-    --accent: 32 95% 55%;
-    --accent-foreground: 0 0% 100%;
+    --accent: 220 14% 96%;
+    --accent-foreground: 220 25% 10%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
     --border: 220 14% 89%;
     --input: 220 14% 89%;
-    --ring: 349 72% 52%;
-    --radius: 1rem;
+    --ring: 220 90% 56%;
+    --radius: 0.75rem;
+
     --youtube: 0 100% 50%;
     --instagram: 330 80% 55%;
+    --ig-gradient-start: 37 97% 60%;
+    --ig-gradient-mid: 330 80% 55%;
+    --ig-gradient-end: 270 70% 55%;
     --image-blue: 210 80% 55%;
+    --success: 152 60% 45%;
+
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;
     --sidebar-primary: 240 5.9% 10%;
@@ -52,11 +58,47 @@
   }
 }
 
+/* Scrollbar hide for tab bar */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
 @keyframes fade-up {
   from { opacity: 0; transform: translateY(16px); filter: blur(4px); }
   to { opacity: 1; transform: translateY(0); filter: blur(0); }
 }
 
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes slide-down {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .animate-fade-up {
   animation: fade-up 600ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-fade-in {
+  animation: fade-in 400ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-scale-in {
+  animation: scale-in 500ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-slide-down {
+  animation: slide-down 400ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
