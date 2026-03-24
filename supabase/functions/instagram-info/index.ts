@@ -42,6 +42,8 @@ Deno.serve(async (req) => {
 
     // Check if RapidAPI key is available for full download support
     const rapidApiKey = Deno.env.get("RAPIDAPI_KEY");
+    const hasKey = !!rapidApiKey;
+    const keyLen = rapidApiKey?.length || 0;
 
     // For DP downloads
     if (type === "dp") {
@@ -111,6 +113,7 @@ Deno.serve(async (req) => {
 
     // For videos, reels, and photos
     // Try RapidAPI first for full media download
+    let rapidApiError = "";
     if (rapidApiKey) {
       try {
         const apiUrl = `https://instagram-scraper-api2.p.rapidapi.com/v1/post_info?code_or_id_or_url=${encodeURIComponent(url)}`;
@@ -120,7 +123,15 @@ Deno.serve(async (req) => {
             "x-rapidapi-host": "instagram-scraper-api2.p.rapidapi.com",
           },
         });
-        const data = await res.json();
+        const rawText = await res.text();
+        rapidApiError = `status:${res.status} body:${rawText.substring(0, 300)}`;
+        
+        let data: any;
+        try {
+          data = JSON.parse(rawText);
+        } catch {
+          throw new Error("Invalid API response");
+        }
         
         if (data?.data) {
           const post = data.data;
@@ -165,7 +176,8 @@ Deno.serve(async (req) => {
             );
           }
         }
-      } catch {
+      } catch (e: any) {
+        rapidApiError = rapidApiError || e?.message || "unknown error";
         // Fall through to oEmbed
       }
     }
@@ -217,7 +229,6 @@ Deno.serve(async (req) => {
       mediaUrl = thumbnail;
     }
 
-    const hasRapidApi = !!rapidApiKey;
     return new Response(
       JSON.stringify({
         title,
@@ -225,11 +236,12 @@ Deno.serve(async (req) => {
         thumbnail: thumbnail || mediaUrl,
         mediaUrl,
         downloadAvailable: !!mediaUrl,
+        debug: { hasKey, keyLen, rapidApiError },
         message: mediaUrl
           ? `${label} found! Click Download to save it.`
-          : hasRapidApi
-            ? `${label} metadata loaded. The content may be private.`
-            : `${label} metadata loaded. For full video/reel downloads, set up RapidAPI integration.`,
+          : hasKey
+            ? `${label} metadata loaded. RapidAPI error: ${rapidApiError}`
+            : `${label} metadata loaded. RapidAPI key NOT found.`,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
