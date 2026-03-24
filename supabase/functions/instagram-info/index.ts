@@ -236,12 +236,12 @@ Deno.serve(async (req) => {
         thumbnail: thumbnail || mediaUrl,
         mediaUrl,
         downloadAvailable: !!mediaUrl,
-        debug: { hasKey, keyLen },
+        debug: { hasKey, keyLen, rapidApiError },
         message: mediaUrl
           ? `${label} found! Click Download to save it.`
           : hasKey
-            ? `${label} metadata loaded. RapidAPI key found (len:${keyLen}) but API returned no data. The content may be private.`
-            : `${label} metadata loaded. RapidAPI key NOT found. Set up RapidAPI integration.`,
+            ? `${label} metadata loaded. RapidAPI error: ${rapidApiError}`
+            : `${label} metadata loaded. RapidAPI key NOT found.`,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
