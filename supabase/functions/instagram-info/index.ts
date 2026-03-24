@@ -176,7 +176,8 @@ Deno.serve(async (req) => {
             );
           }
         }
-      } catch {
+      } catch (e: any) {
+        rapidApiError = rapidApiError || e?.message || "unknown error";
         // Fall through to oEmbed
       }
     }
