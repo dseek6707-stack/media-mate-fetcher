@@ -114,8 +114,8 @@ Deno.serve(async (req) => {
     // For videos, reels, and photos
     // Try RapidAPI first for full media download
     if (rapidApiKey) {
+      let rapidApiError = "";
       try {
-        console.log("RapidAPI key found, attempting API call...");
         const apiUrl = `https://instagram-scraper-api2.p.rapidapi.com/v1/post_info?code_or_id_or_url=${encodeURIComponent(url)}`;
         const res = await fetch(apiUrl, {
           headers: {
@@ -123,15 +123,13 @@ Deno.serve(async (req) => {
             "x-rapidapi-host": "instagram-scraper-api2.p.rapidapi.com",
           },
         });
-        console.log("RapidAPI response status:", res.status);
         const rawText = await res.text();
-        console.log("RapidAPI raw response (first 500 chars):", rawText.substring(0, 500));
+        rapidApiError = `status:${res.status} body:${rawText.substring(0, 300)}`;
         
         let data: any;
         try {
           data = JSON.parse(rawText);
         } catch {
-          console.log("Failed to parse RapidAPI response as JSON");
           throw new Error("Invalid API response");
         }
         
