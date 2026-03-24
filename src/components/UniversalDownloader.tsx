@@ -209,29 +209,48 @@ const UniversalDownloader = ({ activeTab }: UniversalDownloaderProps) => {
     setError("");
     setSuccess("");
     try {
-      const { data, error: fnError } = await supabase.functions.invoke("download-image", {
-        body: { url: downloadUrl },
-      });
-      if (fnError) throw fnError;
-      if (data instanceof Blob) {
-        const blobUrl = URL.createObjectURL(data);
-        const link = document.createElement("a");
-        link.href = blobUrl;
-        link.download = filename || downloadUrl.split("/").pop()?.split("?")[0] || "download";
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(blobUrl);
-        setSuccess("Download started! Check your downloads folder.");
-      } else {
-        const text = await new Response(data).text();
-        try {
-          const json = JSON.parse(text);
-          throw new Error(json.error || "Download failed");
-        } catch {
-          throw new Error("Download failed. Please try again.");
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/download-image`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "apikey": import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          },
+          body: JSON.stringify({ url: downloadUrl }),
         }
+      );
+
+      const contentType = response.headers.get("content-type") || "";
+      
+      if (contentType.includes("application/json")) {
+        const json = await response.json();
+        throw new Error(json.error || "Download failed");
       }
+
+      const blob = await response.blob();
+      if (blob.size === 0) throw new Error("Empty response received");
+
+      const cleanFilename = filename || downloadUrl.split("/").pop()?.split("?")[0] || "download";
+      // Add extension based on content type if missing
+      let finalFilename = cleanFilename;
+      if (!finalFilename.match(/\.\w{3,4}$/)) {
+        if (contentType.includes("jpeg") || contentType.includes("jpg")) finalFilename += ".jpg";
+        else if (contentType.includes("png")) finalFilename += ".png";
+        else if (contentType.includes("webp")) finalFilename += ".webp";
+        else if (contentType.includes("mp4")) finalFilename += ".mp4";
+        else finalFilename += ".jpg";
+      }
+
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = finalFilename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(blobUrl);
+      setSuccess("Download started! Check your downloads folder.");
     } catch (e: any) {
       setError(e.message || "Download failed. Please try again.");
     } finally {

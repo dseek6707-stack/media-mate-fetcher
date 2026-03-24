@@ -21,7 +21,6 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Validate URL
     let parsedUrl: URL;
     try {
       parsedUrl = new URL(url);
@@ -32,17 +31,32 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Fetch the image/media from the remote URL
-    const mediaResponse = await fetch(parsedUrl.toString(), {
-      headers: { 
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      },
-      redirect: "follow",
-    });
+    // Fetch the image/media from the remote URL with multiple retries
+    let mediaResponse: Response | null = null;
+    const userAgents = [
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+    ];
 
-    if (!mediaResponse.ok) {
+    for (const ua of userAgents) {
+      try {
+        mediaResponse = await fetch(parsedUrl.toString(), {
+          headers: {
+            "User-Agent": ua,
+            "Accept": "image/*,video/*,*/*",
+            "Referer": parsedUrl.origin,
+          },
+          redirect: "follow",
+        });
+        if (mediaResponse.ok) break;
+      } catch {
+        continue;
+      }
+    }
+
+    if (!mediaResponse || !mediaResponse.ok) {
       return new Response(
-        JSON.stringify({ error: `Failed to fetch media: ${mediaResponse.status}` }),
+        JSON.stringify({ error: `Failed to fetch media: ${mediaResponse?.status || "network error"}` }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -50,9 +64,20 @@ Deno.serve(async (req) => {
     const contentType = mediaResponse.headers.get("content-type") || "application/octet-stream";
     const mediaData = await mediaResponse.arrayBuffer();
 
+    // Reject if response is HTML (login page, error page, etc.)
+    if (contentType.includes("text/html")) {
+      return new Response(
+        JSON.stringify({ error: "The URL returned an HTML page instead of media. The content may be private or require login." }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // Extract filename from URL
     const pathParts = parsedUrl.pathname.split("/");
     let filename = pathParts[pathParts.length - 1] || "download";
+    
+    // Clean query params from filename
+    filename = filename.split("?")[0];
     
     // Add extension if missing
     if (!filename.includes(".")) {
@@ -64,7 +89,8 @@ Deno.serve(async (req) => {
       else filename += ".jpg";
     }
 
-    return new Response(mediaData, {
+    return new Response(new Uint8Array(mediaData), {
+      status: 200,
       headers: {
         ...corsHeaders,
         "Content-Type": contentType,

@@ -40,38 +40,53 @@ Deno.serve(async (req) => {
 
     const label = CONTENT_LABELS[type] || "Instagram Content";
 
+    // Check if RapidAPI key is available for full download support
+    const rapidApiKey = Deno.env.get("RAPIDAPI_KEY");
+
     // For DP downloads
     if (type === "dp") {
       const usernameMatch = url.match(/instagram\.com\/([^/?#]+)/);
       const username = usernameMatch?.[1] || "unknown";
 
-      // Try to get DP via i.instagram.com (public endpoint)
-      let dpUrl: string | null = null;
-      try {
-        const res = await fetch(`https://www.instagram.com/${username}/?__a=1&__d=dis`, {
-          headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          },
-        });
-        const text = await res.text();
-        if (text.startsWith("{")) {
-          const json = JSON.parse(text);
-          dpUrl = json?.graphql?.user?.profile_pic_url_hd || json?.graphql?.user?.profile_pic_url || null;
+      // Try RapidAPI first if available
+      if (rapidApiKey) {
+        try {
+          const res = await fetch(`https://instagram-scraper-api2.p.rapidapi.com/v1/info?username_or_id_or_url=${encodeURIComponent(username)}`, {
+            headers: {
+              "x-rapidapi-key": rapidApiKey,
+              "x-rapidapi-host": "instagram-scraper-api2.p.rapidapi.com",
+            },
+          });
+          const data = await res.json();
+          const dpUrl = data?.data?.hd_profile_pic_url_info?.url || data?.data?.profile_pic_url_hd || data?.data?.profile_pic_url || null;
+          if (dpUrl) {
+            return new Response(
+              JSON.stringify({
+                title: `@${username}'s Profile Picture`,
+                author: username,
+                thumbnail: dpUrl,
+                mediaUrl: dpUrl,
+                downloadAvailable: true,
+                message: "HD Profile picture found! Click Download to save it.",
+              }),
+              { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+        } catch {
+          // Fall through to basic method
         }
-      } catch {
-        // Failed to get DP
       }
 
       return new Response(
         JSON.stringify({
           title: `@${username}'s Profile Picture`,
           author: username,
-          thumbnail: dpUrl,
-          mediaUrl: dpUrl,
-          downloadAvailable: !!dpUrl,
-          message: dpUrl
-            ? "Profile picture found! Click Download to save it."
-            : `Could not fetch @${username}'s profile picture. The account may be private.`,
+          thumbnail: null,
+          mediaUrl: null,
+          downloadAvailable: false,
+          message: rapidApiKey
+            ? `Could not fetch @${username}'s profile picture. The account may be private.`
+            : `Profile picture download requires RapidAPI integration. Please set up a RapidAPI key.`,
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -88,13 +103,74 @@ Deno.serve(async (req) => {
           thumbnail: null,
           mediaUrl: null,
           downloadAvailable: false,
-          message: `${label} detected for @${username}. Stories/Highlights require Instagram login to access. This feature needs Instagram authentication to work.`,
+          message: `${label} detected for @${username}. Stories/Highlights require Instagram authentication. Set up RapidAPI for full support.`,
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // For videos, reels, and photos - try oEmbed first
+    // For videos, reels, and photos
+    // Try RapidAPI first for full media download
+    if (rapidApiKey) {
+      try {
+        const apiUrl = `https://instagram-scraper-api2.p.rapidapi.com/v1/post_info?code_or_id_or_url=${encodeURIComponent(url)}`;
+        const res = await fetch(apiUrl, {
+          headers: {
+            "x-rapidapi-key": rapidApiKey,
+            "x-rapidapi-host": "instagram-scraper-api2.p.rapidapi.com",
+          },
+        });
+        const data = await res.json();
+        
+        if (data?.data) {
+          const post = data.data;
+          const caption = post.caption?.text || label;
+          const owner = post.user?.username || "Unknown";
+          
+          // Get media URL based on type
+          let mediaUrl: string | null = null;
+          let thumbUrl: string | null = null;
+
+          if (post.video_versions && post.video_versions.length > 0) {
+            // Sort by quality (width) descending
+            const sorted = [...post.video_versions].sort((a: any, b: any) => (b.width || 0) - (a.width || 0));
+            mediaUrl = sorted[0]?.url || null;
+            thumbUrl = post.image_versions2?.candidates?.[0]?.url || null;
+          } else if (post.carousel_media && post.carousel_media.length > 0) {
+            // Carousel - get first item
+            const first = post.carousel_media[0];
+            if (first.video_versions?.length > 0) {
+              mediaUrl = first.video_versions[0]?.url || null;
+              thumbUrl = first.image_versions2?.candidates?.[0]?.url || null;
+            } else {
+              mediaUrl = first.image_versions2?.candidates?.[0]?.url || null;
+              thumbUrl = mediaUrl;
+            }
+          } else if (post.image_versions2?.candidates?.length > 0) {
+            mediaUrl = post.image_versions2.candidates[0]?.url || null;
+            thumbUrl = mediaUrl;
+          }
+
+          if (mediaUrl) {
+            return new Response(
+              JSON.stringify({
+                title: caption.substring(0, 100),
+                author: owner,
+                thumbnail: thumbUrl || mediaUrl,
+                mediaUrl,
+                downloadAvailable: true,
+                message: `${label} found! Click Download to save it.`,
+              }),
+              { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+        }
+      } catch {
+        // Fall through to oEmbed
+      }
+    }
+
+    // Fallback: oEmbed for metadata
     let title = label;
     let author = "Unknown";
     let thumbnail: string | null = null;
@@ -126,11 +202,9 @@ Deno.serve(async (req) => {
       });
       const html = await pageRes.text();
 
-      // Try to find video URL in meta tags
       const videoMatch = html.match(/(?:og:video(?::secure_url)?|video_url)["']\s*content=["']([^"']+)/i)
         || html.match(/content=["']([^"']+)["']\s*property=["']og:video/i);
       
-      // Try to find image URL in meta tags
       const imageMatch = html.match(/(?:og:image)["']\s*content=["']([^"']+)/i)
         || html.match(/content=["']([^"']+)["']\s*property=["']og:image/i);
 
@@ -143,6 +217,7 @@ Deno.serve(async (req) => {
       mediaUrl = thumbnail;
     }
 
+    const hasRapidApi = !!rapidApiKey;
     return new Response(
       JSON.stringify({
         title,
@@ -152,7 +227,9 @@ Deno.serve(async (req) => {
         downloadAvailable: !!mediaUrl,
         message: mediaUrl
           ? `${label} found! Click Download to save it.`
-          : `${label} metadata loaded. The content may be private or require authentication for download.`,
+          : hasRapidApi
+            ? `${label} metadata loaded. The content may be private.`
+            : `${label} metadata loaded. For full video/reel downloads, set up RapidAPI integration.`,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

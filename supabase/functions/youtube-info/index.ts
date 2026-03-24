@@ -51,15 +51,27 @@ Deno.serve(async (req) => {
 
     const oembed = JSON.parse(text);
 
+    // Generate all thumbnail URLs for download
+    const thumbnails = [
+      { label: "Max Resolution", url: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg` },
+      { label: "HD (720p)", url: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` },
+      { label: "Standard", url: `https://img.youtube.com/vi/${videoId}/sddefault.jpg` },
+      { label: "Medium", url: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg` },
+      { label: "Default", url: `https://img.youtube.com/vi/${videoId}/default.jpg` },
+    ];
+
     return new Response(
       JSON.stringify({
         videoId,
         title: oembed.title,
         author: oembed.author_name,
         thumbnail: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
+        thumbnails,
         quality: quality || "1080",
-        downloadAvailable: false,
-        message: "Video info loaded. YouTube video downloading requires a dedicated media server with yt-dlp integration.",
+        // Thumbnail download is always available
+        downloadAvailable: true,
+        mediaUrl: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
+        message: `Video info loaded! You can download the thumbnail. For full video download, a RapidAPI key is needed.`,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
