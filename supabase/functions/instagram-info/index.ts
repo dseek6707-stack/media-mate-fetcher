@@ -42,6 +42,8 @@ Deno.serve(async (req) => {
 
     // Check if RapidAPI key is available for full download support
     const rapidApiKey = Deno.env.get("RAPIDAPI_KEY");
+    const hasKey = !!rapidApiKey;
+    const keyLen = rapidApiKey?.length || 0;
 
     // For DP downloads
     if (type === "dp") {
