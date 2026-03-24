@@ -113,8 +113,8 @@ Deno.serve(async (req) => {
 
     // For videos, reels, and photos
     // Try RapidAPI first for full media download
+    let rapidApiError = "";
     if (rapidApiKey) {
-      let rapidApiError = "";
       try {
         const apiUrl = `https://instagram-scraper-api2.p.rapidapi.com/v1/post_info?code_or_id_or_url=${encodeURIComponent(url)}`;
         const res = await fetch(apiUrl, {
