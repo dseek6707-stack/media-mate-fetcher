@@ -12,7 +12,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { url, quality } = await req.json();
+    const { url, quality, mode } = await req.json();
 
     if (!url || typeof url !== "string") {
       return new Response(
