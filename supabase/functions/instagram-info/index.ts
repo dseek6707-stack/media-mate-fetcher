@@ -39,18 +39,13 @@ Deno.serve(async (req) => {
     }
 
     const label = CONTENT_LABELS[type] || "Instagram Content";
-
-    // Check if RapidAPI key is available for full download support
     const rapidApiKey = Deno.env.get("RAPIDAPI_KEY");
-    const hasKey = !!rapidApiKey;
-    const keyLen = rapidApiKey?.length || 0;
 
-    // For DP downloads
+    // DP downloads
     if (type === "dp") {
       const usernameMatch = url.match(/instagram\.com\/([^/?#]+)/);
       const username = usernameMatch?.[1] || "unknown";
 
-      // Try RapidAPI first if available
       if (rapidApiKey) {
         try {
           const res = await fetch(`https://instagram-scraper-api2.p.rapidapi.com/v1/info?username_or_id_or_url=${encodeURIComponent(username)}`, {
@@ -74,27 +69,23 @@ Deno.serve(async (req) => {
               { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
             );
           }
-        } catch {
-          // Fall through to basic method
-        }
+        } catch { /* fall through */ }
       }
 
       return new Response(
         JSON.stringify({
           title: `@${username}'s Profile Picture`,
           author: username,
-          thumbnail: null,
-          mediaUrl: null,
-          downloadAvailable: false,
+          thumbnail: null, mediaUrl: null, downloadAvailable: false,
           message: rapidApiKey
             ? `Could not fetch @${username}'s profile picture. The account may be private.`
-            : `Profile picture download requires RapidAPI integration. Please set up a RapidAPI key.`,
+            : `Profile picture download requires API integration. Please set up a RapidAPI key.`,
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // For stories and highlights
+    // Stories and highlights
     if (type === "stories" || type === "highlights") {
       const usernameMatch = url.match(/instagram\.com\/stories\/([^/?#]+)/);
       const username = usernameMatch?.[1] || "unknown";
@@ -102,71 +93,61 @@ Deno.serve(async (req) => {
         JSON.stringify({
           title: `${label} from @${username}`,
           author: username,
-          thumbnail: null,
-          mediaUrl: null,
-          downloadAvailable: false,
-          message: `${label} detected for @${username}. Stories/Highlights require Instagram authentication. Set up RapidAPI for full support.`,
+          thumbnail: null, mediaUrl: null, downloadAvailable: false,
+          message: `${label} detected for @${username}. Stories/Highlights require Instagram authentication.`,
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // For videos, reels, and photos
-    // Try RapidAPI first for full media download
-    let rapidApiError = "";
+    // Videos, reels, photos — try instagram-reels-downloader-api first
     if (rapidApiKey) {
       try {
-        const apiUrl = `https://instagram-scraper-api2.p.rapidapi.com/v1/post_info?code_or_id_or_url=${encodeURIComponent(url)}`;
+        const apiUrl = `https://instagram-reels-downloader-api.p.rapidapi.com/download?url=${encodeURIComponent(url)}`;
         const res = await fetch(apiUrl, {
           headers: {
+            "Content-Type": "application/json",
             "x-rapidapi-key": rapidApiKey,
-            "x-rapidapi-host": "instagram-scraper-api2.p.rapidapi.com",
+            "x-rapidapi-host": "instagram-reels-downloader-api.p.rapidapi.com",
           },
         });
-        const rawText = await res.text();
-        rapidApiError = `status:${res.status} body:${rawText.substring(0, 300)}`;
-        
-        let data: any;
-        try {
-          data = JSON.parse(rawText);
-        } catch {
-          throw new Error("Invalid API response");
-        }
-        
-        if (data?.data) {
-          const post = data.data;
-          const caption = post.caption?.text || label;
-          const owner = post.user?.username || "Unknown";
-          
-          // Get media URL based on type
+
+        if (res.ok) {
+          const data = await res.json();
+
+          // Extract media URL from the response
           let mediaUrl: string | null = null;
           let thumbUrl: string | null = null;
+          let title = label;
 
-          if (post.video_versions && post.video_versions.length > 0) {
-            // Sort by quality (width) descending
-            const sorted = [...post.video_versions].sort((a: any, b: any) => (b.width || 0) - (a.width || 0));
-            mediaUrl = sorted[0]?.url || null;
-            thumbUrl = post.image_versions2?.candidates?.[0]?.url || null;
-          } else if (post.carousel_media && post.carousel_media.length > 0) {
-            // Carousel - get first item
-            const first = post.carousel_media[0];
-            if (first.video_versions?.length > 0) {
-              mediaUrl = first.video_versions[0]?.url || null;
-              thumbUrl = first.image_versions2?.candidates?.[0]?.url || null;
-            } else {
-              mediaUrl = first.image_versions2?.candidates?.[0]?.url || null;
-              thumbUrl = mediaUrl;
-            }
-          } else if (post.image_versions2?.candidates?.length > 0) {
-            mediaUrl = post.image_versions2.candidates[0]?.url || null;
-            thumbUrl = mediaUrl;
+          // Handle various response formats
+          if (data?.url) {
+            mediaUrl = data.url;
+          } else if (data?.video_url) {
+            mediaUrl = data.video_url;
+          } else if (data?.media_url) {
+            mediaUrl = data.media_url;
+          } else if (data?.download_url) {
+            mediaUrl = data.download_url;
+          } else if (Array.isArray(data?.urls) && data.urls.length > 0) {
+            mediaUrl = data.urls[0]?.url || data.urls[0];
+          } else if (Array.isArray(data?.medias) && data.medias.length > 0) {
+            // Pick video first, then image
+            const videoMedia = data.medias.find((m: any) => m.type === "video");
+            const firstMedia = videoMedia || data.medias[0];
+            mediaUrl = firstMedia?.url || firstMedia?.download_url || null;
+            thumbUrl = firstMedia?.thumbnail || null;
           }
+
+          if (data?.title) title = data.title;
+          if (data?.thumbnail) thumbUrl = data.thumbnail;
+          if (data?.image_url && !thumbUrl) thumbUrl = data.image_url;
 
           if (mediaUrl) {
             return new Response(
               JSON.stringify({
-                title: caption.substring(0, 100),
-                author: owner,
+                title: (title || label).substring(0, 100),
+                author: data?.username || data?.author || "Unknown",
                 thumbnail: thumbUrl || mediaUrl,
                 mediaUrl,
                 downloadAvailable: true,
@@ -176,72 +157,85 @@ Deno.serve(async (req) => {
             );
           }
         }
-      } catch (e: any) {
-        rapidApiError = rapidApiError || e?.message || "unknown error";
-        // Fall through to oEmbed
-      }
+      } catch { /* fall through to scraper API2 */ }
+
+      // Fallback: try instagram-scraper-api2
+      try {
+        const apiUrl = `https://instagram-scraper-api2.p.rapidapi.com/v1/post_info?code_or_id_or_url=${encodeURIComponent(url)}`;
+        const res = await fetch(apiUrl, {
+          headers: {
+            "x-rapidapi-key": rapidApiKey,
+            "x-rapidapi-host": "instagram-scraper-api2.p.rapidapi.com",
+          },
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.data) {
+            const post = data.data;
+            const caption = post.caption?.text || label;
+            const owner = post.user?.username || "Unknown";
+            let mediaUrl: string | null = null;
+            let thumbUrl: string | null = null;
+
+            if (post.video_versions?.length > 0) {
+              const sorted = [...post.video_versions].sort((a: any, b: any) => (b.width || 0) - (a.width || 0));
+              mediaUrl = sorted[0]?.url || null;
+              thumbUrl = post.image_versions2?.candidates?.[0]?.url || null;
+            } else if (post.carousel_media?.length > 0) {
+              const first = post.carousel_media[0];
+              if (first.video_versions?.length > 0) {
+                mediaUrl = first.video_versions[0]?.url || null;
+              } else {
+                mediaUrl = first.image_versions2?.candidates?.[0]?.url || null;
+              }
+              thumbUrl = first.image_versions2?.candidates?.[0]?.url || null;
+            } else if (post.image_versions2?.candidates?.length > 0) {
+              mediaUrl = post.image_versions2.candidates[0]?.url || null;
+              thumbUrl = mediaUrl;
+            }
+
+            if (mediaUrl) {
+              return new Response(
+                JSON.stringify({
+                  title: caption.substring(0, 100),
+                  author: owner,
+                  thumbnail: thumbUrl || mediaUrl,
+                  mediaUrl,
+                  downloadAvailable: true,
+                  message: `${label} found! Click Download to save it.`,
+                }),
+                { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+              );
+            }
+          }
+        }
+      } catch { /* fall through */ }
     }
 
-    // Fallback: oEmbed for metadata
+    // Final fallback: oEmbed
     let title = label;
     let author = "Unknown";
     let thumbnail: string | null = null;
 
     try {
-      const oembedUrl = `https://api.instagram.com/oembed/?url=${encodeURIComponent(url)}`;
-      const oembedRes = await fetch(oembedUrl);
-      const text = await oembedRes.text();
-
-      if (oembedRes.ok && text.startsWith("{")) {
-        const data = JSON.parse(text);
+      const oembedRes = await fetch(`https://api.instagram.com/oembed/?url=${encodeURIComponent(url)}`);
+      if (oembedRes.ok) {
+        const data = await oembedRes.json();
         title = data.title || label;
         author = data.author_name || "Unknown";
         thumbnail = data.thumbnail_url || null;
       }
-    } catch {
-      // oEmbed failed
-    }
-
-    // Try to extract media URL from page HTML
-    let mediaUrl: string | null = null;
-    try {
-      const pageRes = await fetch(url, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "Accept": "text/html,application/xhtml+xml",
-        },
-        redirect: "follow",
-      });
-      const html = await pageRes.text();
-
-      const videoMatch = html.match(/(?:og:video(?::secure_url)?|video_url)["']\s*content=["']([^"']+)/i)
-        || html.match(/content=["']([^"']+)["']\s*property=["']og:video/i);
-      
-      const imageMatch = html.match(/(?:og:image)["']\s*content=["']([^"']+)/i)
-        || html.match(/content=["']([^"']+)["']\s*property=["']og:image/i);
-
-      if (type === "video" || type === "reels") {
-        mediaUrl = videoMatch?.[1] || imageMatch?.[1] || thumbnail;
-      } else {
-        mediaUrl = imageMatch?.[1] || thumbnail;
-      }
-    } catch {
-      mediaUrl = thumbnail;
-    }
+    } catch { /* ignore */ }
 
     return new Response(
       JSON.stringify({
-        title,
-        author,
-        thumbnail: thumbnail || mediaUrl,
-        mediaUrl,
-        downloadAvailable: !!mediaUrl,
-        debug: { hasKey, keyLen, rapidApiError },
-        message: mediaUrl
-          ? `${label} found! Click Download to save it.`
-          : hasKey
-            ? `${label} metadata loaded. RapidAPI error: ${rapidApiError}`
-            : `${label} metadata loaded. RapidAPI key NOT found.`,
+        title, author, thumbnail,
+        mediaUrl: thumbnail,
+        downloadAvailable: !!thumbnail,
+        message: rapidApiKey
+          ? `${label} metadata loaded. Ensure your RapidAPI subscription includes Instagram APIs.`
+          : `${label} metadata loaded. Add a RapidAPI key for full download support.`,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
