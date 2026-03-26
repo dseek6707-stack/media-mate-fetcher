@@ -433,7 +433,7 @@ const UniversalDownloader = ({ activeTab }: UniversalDownloaderProps) => {
             )}
           </div>
 
-          {isYoutube && (
+          {isYoutube && result.type === "youtube" && (
             <p className="text-xs text-muted-foreground">
               Quality: {QUALITY_OPTIONS.find((q) => q.value === quality)?.label}
             </p>
