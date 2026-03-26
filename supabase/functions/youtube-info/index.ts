@@ -21,7 +21,6 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Extract video ID
     const match = url.match(/(?:v=|youtu\.be\/|\/shorts\/)([a-zA-Z0-9_-]{11})/);
     if (!match) {
       return new Response(
@@ -31,27 +30,22 @@ Deno.serve(async (req) => {
     }
 
     const videoId = match[1];
+    const rapidApiKey = Deno.env.get("RAPIDAPI_KEY");
 
-    // Use YouTube oEmbed API
-    const oembedRes = await fetch(
-      `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`
-    );
-
-    const text = await oembedRes.text();
-
-    if (!oembedRes.ok || !text.startsWith("{")) {
-      return new Response(
-        JSON.stringify({ 
-          error: "Could not fetch video info. Video may be private or unavailable.",
-          videoId,
-        }),
-        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    // Get basic info via oEmbed
+    let title = "YouTube Video";
+    let author = "Unknown";
+    try {
+      const oembedRes = await fetch(
+        `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`
       );
-    }
+      if (oembedRes.ok) {
+        const oembed = await oembedRes.json();
+        title = oembed.title || title;
+        author = oembed.author_name || author;
+      }
+    } catch { /* ignore */ }
 
-    const oembed = JSON.parse(text);
-
-    // Generate all thumbnail URLs for download
     const thumbnails = [
       { label: "Max Resolution", url: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg` },
       { label: "HD (720p)", url: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` },
@@ -60,18 +54,89 @@ Deno.serve(async (req) => {
       { label: "Default", url: `https://img.youtube.com/vi/${videoId}/default.jpg` },
     ];
 
+    // Try RapidAPI for actual video download link
+    if (rapidApiKey && rapidApiKey.length > 20) {
+      try {
+        const apiUrl = `https://youtube-media-downloader.p.rapidapi.com/v2/video/details?videoId=${videoId}`;
+        const res = await fetch(apiUrl, {
+          headers: {
+            "x-rapidapi-key": rapidApiKey,
+            "x-rapidapi-host": "youtube-media-downloader.p.rapidapi.com",
+          },
+        });
+        
+        if (res.ok) {
+          const data = await res.json();
+          // Extract video download links
+          const videos = data?.videos?.items || [];
+          const audios = data?.audios?.items || [];
+          
+          // Find best matching quality
+          const qualityMap: Record<string, string> = {
+            "2160": "2160p", "1080": "1080p", "720": "720p",
+            "480": "480p", "360": "360p",
+          };
+          const targetQ = qualityMap[quality || "1080"] || "720p";
+          
+          let videoUrl = null;
+          // Try exact match first, then fallback to best available
+          for (const v of videos) {
+            if (v.quality === targetQ && v.url) {
+              videoUrl = v.url;
+              break;
+            }
+          }
+          if (!videoUrl && videos.length > 0) {
+            videoUrl = videos[0]?.url || null;
+          }
+
+          // Audio only
+          if (quality === "audio" && audios.length > 0) {
+            return new Response(
+              JSON.stringify({
+                videoId, title, author,
+                thumbnail: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
+                thumbnails,
+                quality: quality || "1080",
+                downloadAvailable: true,
+                mediaUrl: audios[0]?.url || null,
+                isAudio: true,
+                message: "Audio ready! Click Download to save.",
+              }),
+              { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+
+          if (videoUrl) {
+            return new Response(
+              JSON.stringify({
+                videoId, title, author,
+                thumbnail: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
+                thumbnails,
+                quality: quality || "1080",
+                downloadAvailable: true,
+                mediaUrl: videoUrl,
+                message: `Video ready in ${targetQ}! Click Download to save.`,
+              }),
+              { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+            );
+          }
+        }
+      } catch { /* fall through to thumbnail-only */ }
+    }
+
+    // Fallback: thumbnail download only
     return new Response(
       JSON.stringify({
-        videoId,
-        title: oembed.title,
-        author: oembed.author_name,
+        videoId, title, author,
         thumbnail: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
         thumbnails,
         quality: quality || "1080",
-        // Thumbnail download is always available
         downloadAvailable: true,
         mediaUrl: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
-        message: `Video info loaded! You can download the thumbnail. For full video download, a RapidAPI key is needed.`,
+        message: rapidApiKey
+          ? "Thumbnail ready! For full video download, ensure your RapidAPI subscription is active."
+          : "Thumbnail ready! Add a RapidAPI key for full video download support.",
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
