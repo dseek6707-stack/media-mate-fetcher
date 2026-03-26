@@ -164,7 +164,10 @@ const UniversalDownloader = ({ activeTab }: UniversalDownloaderProps) => {
         const { data, error: fnError } = await supabase.functions.invoke("youtube-info", {
           body: { url, quality },
         });
-        if (fnError) throw fnError;
+        if (fnError) {
+          setError("Could not connect to server. Please try again.");
+          return;
+        }
         if (data?.error) {
           setError(data.error);
           return;
@@ -173,6 +176,7 @@ const UniversalDownloader = ({ activeTab }: UniversalDownloaderProps) => {
           title: data.title,
           author: data.author,
           thumbnail: data.thumbnail,
+          mediaUrl: data.mediaUrl,
           message: data.message,
           downloadAvailable: data.downloadAvailable,
           type: "youtube",
@@ -182,7 +186,10 @@ const UniversalDownloader = ({ activeTab }: UniversalDownloaderProps) => {
         const { data, error: fnError } = await supabase.functions.invoke("instagram-info", {
           body: { url, type: contentType },
         });
-        if (fnError) throw fnError;
+        if (fnError) {
+          setError("Could not connect to server. Please try again.");
+          return;
+        }
         if (data?.error) {
           setError(data.error);
           return;
