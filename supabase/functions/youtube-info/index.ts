@@ -12,7 +12,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { url, quality } = await req.json();
+    const { url, quality, mode } = await req.json();
 
     if (!url || typeof url !== "string") {
       return new Response(
@@ -53,6 +53,22 @@ Deno.serve(async (req) => {
       { label: "Medium", url: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg` },
       { label: "Default", url: `https://img.youtube.com/vi/${videoId}/default.jpg` },
     ];
+
+    // Thumbnail-only mode: return thumbnail immediately
+    if (mode === "thumbnail") {
+      return new Response(
+        JSON.stringify({
+          videoId, title, author,
+          thumbnail: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
+          thumbnails,
+          quality: "max",
+          downloadAvailable: true,
+          mediaUrl: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
+          message: "Thumbnail ready! Click Download to save it.",
+        }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     // Try RapidAPI for actual video download link
     if (rapidApiKey && rapidApiKey.length > 20) {

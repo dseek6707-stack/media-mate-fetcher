@@ -1,4 +1,4 @@
-import { Film, ImageIcon, Play, User, BookOpen, Clock, Video, Camera } from "lucide-react";
+import { Film, ImageIcon, Play, User, BookOpen, Clock, Video, Camera, Image as ImageLucide } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type FeatureTab =
@@ -8,7 +8,8 @@ export type FeatureTab =
   | "ig-dp"
   | "ig-stories"
   | "ig-highlights"
-  | "youtube"
+  | "yt-video"
+  | "yt-thumbnail"
   | "image";
 
 interface FeatureTabsProps {
@@ -16,14 +17,15 @@ interface FeatureTabsProps {
   onChange: (tab: FeatureTab) => void;
 }
 
-const tabs: { id: FeatureTab; label: string; icon: React.ElementType; group: "instagram" | "other" }[] = [
+const tabs: { id: FeatureTab; label: string; icon: React.ElementType; group: "instagram" | "youtube" | "other" }[] = [
   { id: "ig-video", label: "Video", icon: Video, group: "instagram" },
   { id: "ig-reels", label: "Reels", icon: Film, group: "instagram" },
   { id: "ig-photo", label: "Photo", icon: Camera, group: "instagram" },
   { id: "ig-dp", label: "DP", icon: User, group: "instagram" },
   { id: "ig-stories", label: "Stories", icon: BookOpen, group: "instagram" },
   { id: "ig-highlights", label: "Highlights", icon: Clock, group: "instagram" },
-  { id: "youtube", label: "YouTube", icon: Play, group: "other" },
+  { id: "yt-video", label: "YT Video", icon: Play, group: "youtube" },
+  { id: "yt-thumbnail", label: "YT Thumb", icon: ImageLucide, group: "youtube" },
   { id: "image", label: "Image", icon: ImageIcon, group: "other" },
 ];
 
