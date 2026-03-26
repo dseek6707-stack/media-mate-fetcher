@@ -326,7 +326,7 @@ const UniversalDownloader = ({ activeTab }: UniversalDownloaderProps) => {
           </div>
         </div>
 
-        {isYoutube && (
+        {activeTab === "yt-video" && (
           <div className="relative">
             <select
               value={quality}
@@ -527,7 +527,8 @@ const UniversalDownloader = ({ activeTab }: UniversalDownloaderProps) => {
             { icon: User, label: "IG DP (HD)", color: "text-instagram" },
             { icon: BookOpen, label: "IG Stories", color: "text-instagram" },
             { icon: Clock, label: "IG Highlights", color: "text-instagram" },
-            { icon: Play, label: "YouTube", color: "text-youtube" },
+            { icon: Play, label: "YT Video", color: "text-youtube" },
+            { icon: ImageLucide, label: "YT Thumb", color: "text-youtube" },
             { icon: ImageIcon, label: "Any Image", color: "text-image-blue" },
           ].map((f) => {
             const FIcon = f.icon;
