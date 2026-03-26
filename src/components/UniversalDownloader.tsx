@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { Download, AlertCircle, Link2, X, Search, Play, Film, Camera, User, BookOpen, Clock, Video, ImageIcon, ExternalLink, CheckCircle2 } from "lucide-react";
+import { Download, AlertCircle, Link2, X, Search, Play, Film, Camera, User, BookOpen, Clock, Video, ImageIcon, ExternalLink, CheckCircle2, Image as ImageLucide } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import type { FeatureTab } from "./FeatureTabs";
 
@@ -68,11 +68,20 @@ const CONFIG: Record<FeatureTab, DownloaderConfig> = {
     buttonColor: "bg-instagram",
     shadowColor: "hover:shadow-[0_4px_20px_0_hsl(330_80%_55%/0.3)]",
   },
-  youtube: {
+  "yt-video": {
     title: "YouTube Video Downloader",
     subtitle: "Download YouTube videos in multiple qualities",
     placeholder: "https://youtube.com/watch?v=...",
     icon: Play,
+    color: "text-youtube",
+    buttonColor: "bg-youtube",
+    shadowColor: "hover:shadow-[0_4px_20px_0_hsl(0_100%_50%/0.3)]",
+  },
+  "yt-thumbnail": {
+    title: "YouTube Thumbnail Downloader",
+    subtitle: "Download any YouTube video thumbnail in HD",
+    placeholder: "https://youtube.com/watch?v=...",
+    icon: ImageLucide,
     color: "text-youtube",
     buttonColor: "bg-youtube",
     shadowColor: "hover:shadow-[0_4px_20px_0_hsl(0_100%_50%/0.3)]",
@@ -124,7 +133,8 @@ const UniversalDownloader = ({ activeTab }: UniversalDownloaderProps) => {
   const config = CONFIG[activeTab];
   const Icon = config.icon;
   const isInstagram = activeTab.startsWith("ig-");
-  const isYoutube = activeTab === "youtube";
+  const isYoutube = activeTab === "yt-video" || activeTab === "yt-thumbnail";
+  const isYtThumbnail = activeTab === "yt-thumbnail";
   const isImage = activeTab === "image";
 
   const handlePaste = useCallback(async () => {
@@ -162,7 +172,7 @@ const UniversalDownloader = ({ activeTab }: UniversalDownloaderProps) => {
 
       if (isYoutube) {
         const { data, error: fnError } = await supabase.functions.invoke("youtube-info", {
-          body: { url, quality },
+          body: { url, quality, mode: isYtThumbnail ? "thumbnail" : "video" },
         });
         if (fnError) {
           setError("Could not connect to server. Please try again.");
@@ -179,7 +189,7 @@ const UniversalDownloader = ({ activeTab }: UniversalDownloaderProps) => {
           mediaUrl: data.mediaUrl,
           message: data.message,
           downloadAvailable: data.downloadAvailable,
-          type: "youtube",
+          type: isYtThumbnail ? "yt-thumbnail" : "youtube",
         });
       } else {
         const contentType = activeTab.replace("ig-", "");
